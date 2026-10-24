@@ -310,6 +310,17 @@ def split_string_by_punctuations(s):
             txt += char
             continue
 
+        if (
+            char == " "
+            and "\u0e00" <= previous_char <= "\u0e7f"
+            and "\u0e00" <= next_char <= "\u0e7f"
+        ):
+            # Thai has no full stop: a space between two Thai words ends a sentence or
+            # clause, and Edge TTS word boundaries never cross it.
+            result.append(txt.strip())
+            txt = ""
+            continue
+
         if char not in const.PUNCTUATIONS:
             txt += char
         else:

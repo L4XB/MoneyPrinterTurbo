@@ -1264,6 +1264,56 @@ class TestVoiceService(unittest.TestCase):
         self.assertEqual(len(sub_items), len(script_lines))
         self.assertIn("10:30 every morning", sub_items[-1])
 
+    def test_script_split_breaks_thai_sentences_at_spaces(self):
+        """
+        Thai has no full stop and separates sentences and clauses with a space, so a
+        Thai script must not stay one line. Spaces next to Latin words or digits stay.
+        """
+        text = "วันนี้อากาศดีมาก เราไปเที่ยวทะเลกัน ฉันใช้ iPhone 15 ทุกวัน ราคา 1,500 บาท"
+
+        self.assertEqual(
+            utils.split_string_by_punctuations(text),
+            [
+                "วันนี้อากาศดีมาก",
+                "เราไปเที่ยวทะเลกัน",
+                "ฉันใช้ iPhone 15 ทุกวัน",
+                "ราคา 1,500 บาท",
+            ],
+        )
+
+    def test_edge_cue_aggregation_handles_thai_sentences(self):
+        """
+        The word boundaries edge-tts 7.3.1 returns for this script with
+        th-TH-PremwadeeNeural. Each Thai sentence must get its own subtitle.
+        """
+        sentences = [
+            "ประเทศไทยมีอาหารอร่อยมากมาย",
+            "อาหารไทยมีรสชาติจัดจ้าน",
+            "ต้มยำกุ้งเป็นอาหารที่มีชื่อเสียงไปทั่วโลก",
+            "ผัดไทยก็เป็นที่นิยมเช่นกัน",
+        ]
+        script_lines = utils.split_string_by_punctuations(" ".join(sentences))
+        words = (
+            "ประเทศ ไทย มี อาหาร อร่อย มากมาย อาหาร ไทย มี รสชาติ จัดจ้าน ต้มยำกุ้ง เป็น อาหาร ที่ มี"
+            " ชื่อเสียง ไป ทั่ว โลก ผัด ไทย ก็ เป็น ที่ นิยม เช่น กัน"
+        ).split()
+        cues = [
+            SimpleNamespace(
+                content=word,
+                start=timedelta(seconds=index * 0.3),
+                end=timedelta(seconds=index * 0.3 + 0.25),
+            )
+            for index, word in enumerate(words)
+        ]
+
+        sub_items = vs._build_subtitle_items_from_edge_cues(
+            SimpleNamespace(cues=cues), script_lines
+        )
+
+        self.assertEqual(len(sub_items), len(sentences))
+        for sentence, sub_item in zip(sentences, sub_items):
+            self.assertIn(sentence, sub_item)
+
     def test_script_split_supports_arabic_punctuation(self):
         """
         阿拉伯语脚本常用 ، ؛ ؟ 作为自然断句标点。断句阶段必须识别这些
