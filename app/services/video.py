@@ -909,6 +909,23 @@ def get_bgm_file(bgm_type: str = "random", bgm_file: str = ""):
     return ""
 
 
+def _trim_to_decoded_audio(audio_clip, audio_file: str, playback_duration: float):
+    """Cut the silent tail MoviePy reads past the decoded audio before it loops.
+
+    A container can report encoder padding as audio: a 2.00 s MP3 opens as a
+    2.04 s clip, and looping that length leaves a gap at every seam.
+    """
+    if audio_clip.duration >= playback_duration:
+        return audio_clip
+    try:
+        decoded_duration = bgm_service.validate_audio_file(audio_file)
+    except (bgm_service.BgmServiceError, bgm_service.BgmUploadError):
+        return audio_clip
+    if 0 < decoded_duration < audio_clip.duration:
+        return audio_clip.subclipped(0, decoded_duration)
+    return audio_clip
+
+
 def _fit_clip_to_canvas(
     clip,
     *,
@@ -1858,6 +1875,10 @@ def generate_video(
                 # Fade the complete playback timeline, not each source loop.
                 bgm_effects.append(afx.AudioFadeOut(3))
                 bgm_source_clip = clip_stack.enter_context(AudioFileClip(bgm_file))
+                if bgm_file_override is None:
+                    bgm_source_clip = _trim_to_decoded_audio(
+                        bgm_source_clip, bgm_file, video_clip.duration
+                    )
                 bgm_clip = bgm_source_clip.with_effects(bgm_effects)
                 audio_clip = CompositeAudioClip([audio_clip, bgm_clip])
             except Exception:

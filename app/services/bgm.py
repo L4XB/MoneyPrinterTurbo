@@ -142,7 +142,7 @@ def sanitize_upload_filename(filename: str) -> str:
     return safe_name
 
 
-def _validate_audio(file_path: str, timeout_seconds: int = 30) -> None:
+def _validate_audio(file_path: str, timeout_seconds: int = 30) -> float:
     """
     仅使用项目当前配置的 FFmpeg 验证文件包含可完整解码的音频流。
 
@@ -150,6 +150,8 @@ def _validate_audio(file_path: str, timeout_seconds: int = 30) -> None:
     FFprobe，因此不能新增独立二进制依赖。`-map 0:a:0` 会在没有音频流时失败，
     `-xerror` 会把解码错误提升为失败；完整解码还能拦截加密文件或随机数据偶然
     命中音频帧头的误判。文件可以包含专辑封面等附加流，但只校验第一条音频流。
+
+    Returns the decoded duration of that stream in seconds.
     """
     try:
         decoded = subprocess.run(
@@ -191,27 +193,32 @@ def _validate_audio(file_path: str, timeout_seconds: int = 30) -> None:
     if decoded.returncode != 0:
         raise BgmUploadError("uploaded file must contain a decodable audio stream")
     decoded_audio = False
+    decoded_seconds = 0.0
     for line in decoded.stdout.splitlines():
         key, separator, value = line.partition(b"=")
         if separator and key == b"out_time_us":
             try:
                 decoded_audio = decoded_audio or int(value) > 0
+                decoded_seconds = max(decoded_seconds, int(value) / 1_000_000)
             except ValueError:
                 continue
     if not decoded_audio:
         raise BgmUploadError("uploaded file must contain nonempty decodable audio")
+    return decoded_seconds
 
 
-def validate_audio_file(file_path: str, timeout_seconds: int = 120) -> None:
+def validate_audio_file(file_path: str, timeout_seconds: int = 120) -> float:
     """
     校验磁盘上的音频文件可由项目 FFmpeg 完整解码。
 
     上传预检通常只需 30 秒；Sonilo 生成的配乐最长可达 6 分钟，因此对外提供
     可调整超时的复用入口。服务只依赖 FFmpeg，不要求系统额外安装 FFprobe。
+
+    Returns the decoded duration in seconds.
     """
     if not os.path.isfile(file_path) or os.path.getsize(file_path) <= 0:
         raise BgmUploadError("background music file is empty or missing")
-    _validate_audio(file_path, timeout_seconds=timeout_seconds)
+    return _validate_audio(file_path, timeout_seconds=timeout_seconds)
 
 
 def _stage_bgm_upload(filename: str, source: BinaryIO) -> tuple[str, str, int]:

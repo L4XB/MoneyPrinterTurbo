@@ -32,3 +32,23 @@ def test_looped_background_music_fades_only_at_final_video_end(tmp_path):
     assert rms(3.7, 3.9) > initial * 0.85
     # Only the final three seconds fade; the endpoint is quieter than its start.
     assert rms(7.7, 7.9) < initial * 0.15
+
+
+def test_looped_mp3_background_music_has_no_gap_at_the_seams(tmp_path):
+    if not shutil.which("ffmpeg"):
+        pytest.skip("native FFmpeg required")
+    footage, speech, music, output = (tmp_path / name for name in ("input.mp4", "speech.wav", "music.mp3", "final.mp4"))
+    base = ["ffmpeg", "-nostdin", "-v", "error", "-y", "-threads", "1"]
+    subprocess.run([*base, "-f", "lavfi", "-i", "color=c=red:s=64x64:r=10:d=8", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(footage)], check=True)
+    subprocess.run([*base, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "8", str(speech)], check=True)
+    # MoviePy reads this MP3 as 2.04 s although it decodes to 2.00 s of tone.
+    subprocess.run([*base, "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-c:a", "libmp3lame", str(music)], check=True)
+    request = TaskVideoRequest(video_subject="Music", subtitle_enabled=False, bgm_type="custom", bgm_file=str(music), bgm_volume=1.0, n_threads=1)
+    from unittest.mock import patch
+    with patch.object(video, "get_bgm_file", return_value=str(music)):
+        assert video.generate_video(str(footage), str(speech), "", str(output), request)
+    decoded = subprocess.run([*base, "-i", str(output), "-map", "0:a:0", "-f", "f32le", "-acodec", "pcm_f32le", "-ac", "1", "-ar", "44100", "-"], capture_output=True, check=True)
+    samples = np.frombuffer(decoded.stdout, dtype="<f4")
+    # 10 ms windows across the loop seams at 2 s and 4 s, before the final fade.
+    levels = [float(np.sqrt(np.mean(samples[start:start + 441] ** 2))) for start in range(8820, 211680, 441)]
+    assert min(levels) > max(levels) * 0.5
