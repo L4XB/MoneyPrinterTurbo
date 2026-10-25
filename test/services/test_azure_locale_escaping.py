@@ -22,3 +22,13 @@ class TestAzureLocaleEscaping(unittest.TestCase):
                 self.assertEqual(set(document.attrib), {"version", "{http://www.w3.org/XML/1998/namespace}lang"})
                 self.assertEqual(document.attrib["{http://www.w3.org/XML/1998/namespace}lang"], locale)
                 self.assertEqual(document.find(".//{http://www.w3.org/2001/10/synthesis}prosody").text, "Hello & goodbye.")
+
+    def test_v2_ssml_replaces_control_characters_that_xml_forbids(self):
+        # Pasted Office line breaks (\x0b) and PDF page breaks (\x0c) are not allowed in XML.
+        ssml = voice._build_azure_v2_ssml(
+            "Saving money is simple.\x0bStart with a budget.\x0cThen automate it.",
+            "en-US-AvaMultilingualNeural",
+            1.0,
+        )
+        prosody = ET.fromstring(ssml).find(".//{http://www.w3.org/2001/10/synthesis}prosody")
+        self.assertEqual(prosody.text, "Saving money is simple. Start with a budget. Then automate it.")

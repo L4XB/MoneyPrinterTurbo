@@ -1755,6 +1755,11 @@ def siliconflow_tts(
     return None
 
 
+# XML 1.0 forbids these control characters; one of them invalidates the whole
+# SSML document. The Edge path replaces the same set with spaces.
+_SSML_INVALID_CONTROL_CHARACTERS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
 def _build_azure_v2_ssml(text: str, voice_name: str, voice_rate: float) -> str:
     """构造 Azure Speech V2 使用的 SSML，并安全规范化语速参数。"""
     try:
@@ -1769,7 +1774,7 @@ def _build_azure_v2_ssml(text: str, voice_name: str, voice_rate: float) -> str:
         if len(voice_locale_parts) >= 2
         else "en-US"
     )
-    escaped_text = escape(text)
+    escaped_text = escape(_SSML_INVALID_CONTROL_CHARACTERS.sub(" ", text))
     escaped_voice_locale = escape(voice_locale, {'"': "&quot;"})
     escaped_voice_name = escape(voice_name, {'"': "&quot;"})
     return (
