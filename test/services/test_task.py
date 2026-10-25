@@ -192,6 +192,30 @@ class TestTaskService(unittest.TestCase):
         self.assertEqual(result, ["a.mp4"])
         self.assertEqual(observed, [42, 45, 50])
 
+    def test_material_download_gets_the_clip_speed(self):
+        """
+        download_videos counts each clip at the speed combine_videos plays it, so
+        it needs the same clip speed.
+        """
+        params = VideoParams(
+            video_subject="test", video_source="pexels", video_clip_speed=2.0
+        )
+        seen = {}
+
+        def fake_download_videos(**kwargs):
+            seen.update(kwargs)
+            return ["a.mp4"]
+
+        with (
+            patch.object(tm.sm, "state", MemoryState()),
+            patch.object(
+                tm.material, "download_videos", side_effect=fake_download_videos
+            ),
+        ):
+            tm.get_video_materials("clip-speed", params, ["scene"], 10)
+
+        self.assertEqual(seen["clip_speed"], 2.0)
+
     def test_clip_processing_moves_progress_through_the_combine_half(self):
         """
         片段处理期间进度此前固定在 50%。合成占每条视频进度份额的前一半：

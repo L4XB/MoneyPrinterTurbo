@@ -2038,10 +2038,25 @@ def _report_material_downloaded(
         )
 
 
+def _clip_seconds(
+    item: MaterialInfo, max_clip_duration: float, clip_speed: float = 1.0
+) -> float:
+    """
+    Seconds of the final video that one downloaded clip fills.
+
+    combine_videos plays at most max_clip_duration seconds of each clip and reads
+    max_clip_duration * clip_speed seconds of source for them, so at 2x a 6 s
+    clip fills only 3 s. Counting the source seconds instead stops the download
+    early, and the video then loops its clips to reach the narration.
+    """
+    return min(max_clip_duration, item.duration / clip_speed)
+
+
 def _covered_duration_reporter(
     progress_callback: Callable[[float], None] | None,
     required_duration: float,
     max_clip_duration: int,
+    clip_speed: float = 1.0,
 ) -> Callable[[MaterialInfo], None] | None:
     """
     生成逐素材回调：把“已覆盖的配音时长”换算成 0~1 的下载进度。
@@ -2055,7 +2070,7 @@ def _covered_duration_reporter(
 
     def report(item: MaterialInfo) -> None:
         nonlocal covered_duration
-        covered_duration += min(max_clip_duration, item.duration)
+        covered_duration += _clip_seconds(item, max_clip_duration, clip_speed)
         fraction = 1.0
         if required_duration > 0:
             fraction = min(1.0, covered_duration / required_duration)
@@ -2141,6 +2156,7 @@ def _select_materials_until_duration(
     max_clip_duration: int,
     audio_duration: float,
     current_duration: float = 0.0,
+    clip_speed: float = 1.0,
 ) -> List[tuple[str, MaterialInfo]]:
     """
     按候选顺序选取一轮素材，避免并发时下载已经超过配音时长的候选。
@@ -2153,7 +2169,7 @@ def _select_materials_until_duration(
     total_duration = current_duration
     for material in materials:
         selected.append(material)
-        total_duration += min(max_clip_duration, material[1].duration)
+        total_duration += _clip_seconds(material[1], max_clip_duration, clip_speed)
         if total_duration > audio_duration:
             break
     return selected
@@ -2170,6 +2186,7 @@ def download_videos(
     match_script_order: bool = False,
     progress_callback: Callable[[float], None] | None = None,
     image_motion: ImageMotion = ImageMotion.zoom,
+    clip_speed: float = 1.0,
 ) -> List[str]:
     """
     搜索并下载覆盖配音时长所需的素材，返回本地文件路径。
@@ -2284,6 +2301,8 @@ def download_videos(
             image_motion=image_motion,
         )
 
+    # Stock clips are counted by what they fill at the speed combine_videos plays them.
+    clip_speed = utils.normalize_clip_speed(clip_speed)
     if match_script_order:
         return _download_videos_by_script_order(
             task_id=task_id,
@@ -2294,6 +2313,7 @@ def download_videos(
             max_clip_duration=max_clip_duration,
             material_directory=material_directory,
             progress_callback=progress_callback,
+            clip_speed=clip_speed,
         )
 
     valid_video_items = []
@@ -2323,7 +2343,7 @@ def download_videos(
 
     total_duration = 0.0
     on_downloaded = _covered_duration_reporter(
-        progress_callback, audio_duration, max_clip_duration
+        progress_callback, audio_duration, max_clip_duration, clip_speed
     )
     pending_items = list(valid_video_items)
     # 默认/随机路径同样受素材并发配置控制：按串行逻辑的停止条件预选每轮
@@ -2334,7 +2354,7 @@ def download_videos(
         projected_duration = total_duration
         for item in pending_items:
             batch.append(item)
-            projected_duration += min(max_clip_duration, item.duration)
+            projected_duration += _clip_seconds(item, max_clip_duration, clip_speed)
             if projected_duration > audio_duration:
                 break
         for item in batch:
@@ -2366,7 +2386,7 @@ def download_videos(
                             f"provider={item.provider}, "
                             f"error={type(source_error).__name__}, detail={source_error}"
                         )
-                    seconds = min(max_clip_duration, item.duration)
+                    seconds = _clip_seconds(item, max_clip_duration, clip_speed)
                     total_duration += seconds
                     if total_duration > audio_duration:
                         logger.info(
@@ -2950,6 +2970,7 @@ def _download_videos_by_script_order(
     max_clip_duration: int,
     material_directory: str,
     progress_callback: Callable[[float], None] | None = None,
+    clip_speed: float = 1.0,
 ) -> List[str]:
     """
     按脚本文案顺序下载素材。
@@ -2991,7 +3012,7 @@ def _download_videos_by_script_order(
     material_sources: list[dict[str, Any]] = []
     total_duration = 0.0
     on_downloaded = _covered_duration_reporter(
-        progress_callback, audio_duration, max_clip_duration
+        progress_callback, audio_duration, max_clip_duration, clip_speed
     )
     # 每个关键词独立推进候选下标：只有本轮真正被选中下载的候选才推进，
     # 未被选中的候选保留到下一轮，避免被整轮统一的下标跳过。
@@ -3018,6 +3039,7 @@ def _download_videos_by_script_order(
             max_clip_duration=max_clip_duration,
             audio_duration=audio_duration,
             current_duration=total_duration,
+            clip_speed=clip_speed,
         )
         # _select_materials_until_duration 返回候选列表的前缀子集，
         # 因此前 len(selected_materials) 个即本轮实际尝试下载的候选，
@@ -3053,7 +3075,7 @@ def _download_videos_by_script_order(
                             f"error={type(source_error).__name__}, "
                             f"detail={source_error}"
                         )
-                    total_duration += min(max_clip_duration, item.duration)
+                    total_duration += _clip_seconds(item, max_clip_duration, clip_speed)
                     if total_duration > audio_duration:
                         logger.info(
                             f"total duration of downloaded videos: {total_duration} seconds, skip downloading more"

@@ -1578,6 +1578,62 @@ class TestMaterialTlsVerification(unittest.TestCase):
                 self.assertEqual(result, ["/tmp/a.mp4", "/tmp/c.mp4"])
                 self.assertEqual(fractions, [0.6, 1.0])
 
+    def test_download_videos_counts_each_clip_at_its_playback_speed(self):
+        """
+        At 2x, combine_videos turns a 6 s clip into 3 s of video, so a 10 s
+        narration with 5 s clips needs four 6 s clips, not the three it takes at
+        1x. Counting the source seconds stopped at three, and the video looped.
+        """
+        items = [
+            material.MaterialInfo(
+                provider="pexels",
+                url=f"https://v.example/{name}.mp4",
+                duration=6,
+                source_info={"provider": "pexels", "asset_id": name},
+            )
+            for name in "abcdef"
+        ]
+
+        def fake_save_video(video_url, save_dir=""):
+            return f"/tmp/{video_url.rsplit('/', 1)[-1]}"
+
+        for match_script_order in (False, True):
+            for clip_speed, expected in ((1.0, 3), (2.0, 4)):
+                with (
+                    self.subTest(
+                        match_script_order=match_script_order, clip_speed=clip_speed
+                    ),
+                    patch.dict(
+                        config.app,
+                        {"material_directory": "", "material_concurrency": 1},
+                    ),
+                    patch.object(material, "search_videos_pexels", return_value=items),
+                    patch.object(material, "save_video", side_effect=fake_save_video),
+                    patch.object(
+                        material.material_cache,
+                        "load_material_search_cache",
+                        return_value=None,
+                    ),
+                    patch.object(material.material_cache, "save_material_search_cache"),
+                    patch.object(
+                        material.task_artifacts,
+                        "patch_script_data",
+                        return_value=True,
+                    ),
+                ):
+                    result = material.download_videos(
+                        task_id="clip-speed",
+                        search_terms=["city"],
+                        source="pexels",
+                        video_concat_mode=material.VideoConcatMode.sequential,
+                        audio_duration=10,
+                        max_clip_duration=5,
+                        match_script_order=match_script_order,
+                        clip_speed=clip_speed,
+                    )
+
+                    self.assertEqual(len(result), expected)
+
     def test_script_order_download_reports_progress(self):
         """按文案顺序匹配素材的路径同样要报告下载进度。"""
         fractions = []
