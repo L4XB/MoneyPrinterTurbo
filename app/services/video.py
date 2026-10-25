@@ -957,8 +957,10 @@ def _fit_clip_to_canvas(
     # contain preserves the legacy behavior: show the complete source frame,
     # centered over a black canvas when the aspect ratios differ.
     scale_factor = min(width_scale, height_scale)
-    resized_width = max(1, min(target_width, int(source_width * scale_factor)))
-    resized_height = max(1, min(target_height, int(source_height * scale_factor)))
+    # round, not int: 854 * (1920 / 854) is 1919.999..., and truncating it
+    # leaves a black line along the side the source should fill.
+    resized_width = max(1, min(target_width, round(source_width * scale_factor)))
+    resized_height = max(1, min(target_height, round(source_height * scale_factor)))
     background = ColorClip(
         size=(target_width, target_height), color=(0, 0, 0)
     ).with_duration(clip.duration)

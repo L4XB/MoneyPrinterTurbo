@@ -237,6 +237,31 @@ class TestVideoService(unittest.TestCase):
             vd.close_clip(fitted)
             vd.close_clip(source)
 
+    def test_fit_clip_contain_fills_the_limiting_side_to_the_last_pixel(self):
+        # 854 * (1920 / 854) evaluates to 1919.999..., and truncating it left a
+        # black line along the edge the source should fill.
+        source_color = [17, 34, 51]
+        for source_size, canvas_size, last_pixel in (
+            ((854, 480), (1920, 1080), (540, 1919)),
+            ((1170, 2532), (1080, 1920), (1919, 540)),
+        ):
+            with self.subTest(source_size=source_size):
+                width, height = source_size
+                source = ImageClip(
+                    vd.np.full((height, width, 3), source_color, dtype=vd.np.uint8)
+                ).with_duration(1)
+                fitted = vd._fit_clip_to_canvas(
+                    source,
+                    target_width=canvas_size[0],
+                    target_height=canvas_size[1],
+                    fit_mode=vd.VideoFitMode.contain,
+                )
+                try:
+                    self.assertEqual(fitted.get_frame(0)[last_pixel].tolist(), source_color)
+                finally:
+                    vd.close_clip(fitted)
+                    vd.close_clip(source)
+
     def test_delete_files_deduplicates_paths_and_ignores_missing_files(self):
         """
         循环片段会让同一路径在拼接列表中重复出现，清理时每个路径只能删除一次。
