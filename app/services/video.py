@@ -1154,6 +1154,15 @@ def combine_videos(
             if clip.duration > max_clip_duration:
                 clip = clip.subclipped(0, max_clip_duration)
 
+            # MoviePy writes int(duration * fps) frames, so a 2.96 s clip becomes 88 frames
+            # (2.933 s) and a 0.03 s tail none. Counting clip.duration instead let the frames
+            # lost per clip use up _VIDEO_DURATION_SAFETY_MARGIN, and the narration outlasted
+            # the picture.
+            written_frames = int(clip.duration * fps)
+            if written_frames <= 0:
+                logger.debug(f"clip {index + 1} is shorter than one frame, skipped")
+                return None
+
             # Write each candidate clip to a unique temporary file. Threads must not
             # share the same output path.
             # Distinct combinations can share a task/output directory. Reserve
@@ -1170,7 +1179,7 @@ def combine_videos(
                 fps=fps,
             )
 
-            clip_duration_saved = clip.duration
+            clip_duration_saved = written_frames / fps
             processed_clip = SubClippedVideoClip(
                 file_path=clip_file,
                 duration=clip_duration_saved,

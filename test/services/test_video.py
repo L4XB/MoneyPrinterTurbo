@@ -1211,6 +1211,86 @@ class TestVideoService(unittest.TestCase):
         self.assertEqual(write_mock.call_count, 4)
         self.assertEqual(concat_mock.call_args.kwargs["max_duration"], 10.0)
 
+    def _combine_fake_clips(self, *, audio_duration, video_durations, concat_mode, max_clip_duration):
+        """Run combine_videos on fake clips; return the durations it handed to the writer."""
+
+        class _FakeAudioClip:
+            duration = audio_duration
+
+            def close(self):
+                pass
+
+        class _FakeVideoClip:
+            def __init__(self, duration):
+                self.duration = duration
+                self.size = (1080, 1920)
+                self.w = 1080
+                self.h = 1920
+
+            def subclipped(self, start_time, end_time):
+                return _FakeVideoClip(end_time - start_time)
+
+            def close(self):
+                pass
+
+        written = []
+
+        def _write_clip(clip, *_args, **_kwargs):
+            written.append(clip.duration)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with (
+                patch.object(vd, "AudioFileClip", return_value=_FakeAudioClip()),
+                patch.object(
+                    vd,
+                    "_open_video_clip_quietly",
+                    side_effect=lambda video_path: _FakeVideoClip(video_durations[video_path]),
+                ),
+                patch.object(
+                    vd, "_write_videofile_with_codec_fallback", side_effect=_write_clip
+                ),
+                patch.object(vd, "concat_video_clips_with_ffmpeg"),
+                patch.object(vd, "delete_files"),
+            ):
+                vd.combine_videos(
+                    combined_video_path=os.path.join(temp_dir, "combined.mp4"),
+                    video_paths=list(video_durations),
+                    audio_file=os.path.join(temp_dir, "audio.mp3"),
+                    video_aspect=vd.VideoAspect.portrait,
+                    video_concat_mode=concat_mode,
+                    video_transition_mode=None,
+                    max_clip_duration=max_clip_duration,
+                )
+        return written
+
+    def test_combine_videos_counts_the_frames_each_clip_writes(self):
+        """
+        MoviePy writes int(duration * fps) frames, so a 2.96 s clip is 88 frames
+        (2.933 s) at 30 fps. Counted as 2.96 s, ten clips seemed to cover a 29.45 s
+        narration with the 0.1 s margin, but wrote only 29.33 s of picture.
+        """
+        written = self._combine_fake_clips(
+            audio_duration=29.45,
+            video_durations={f"clip-{index}.mp4": 2.96 for index in range(12)},
+            concat_mode=vd.VideoConcatMode.sequential,
+            max_clip_duration=5,
+        )
+
+        written_seconds = sum(int(duration * vd.fps) for duration in written) / vd.fps
+        self.assertEqual(len(written), 11)
+        self.assertGreaterEqual(written_seconds, 29.45)
+
+    def test_combine_videos_skips_a_tail_shorter_than_one_frame(self):
+        """A 0.03 s tail writes no frame at 30 fps, so it is not written or counted."""
+        written = self._combine_fake_clips(
+            audio_duration=6.1,
+            video_durations={"clip.mp4": 6.03},
+            concat_mode=vd.VideoConcatMode.random,
+            max_clip_duration=3,
+        )
+
+        self.assertEqual(sorted(written), [3.0, 3.0])
+
     def test_combine_videos_cleans_temp_clips_when_concat_fails(self):
         """A failed final merge must not strand encoded clips on disk."""
 
