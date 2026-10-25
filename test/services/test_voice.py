@@ -2009,6 +2009,29 @@ class TestElevenLabsVoice(unittest.TestCase):
         for text in ("[paused]", "(pauses)", "[暂停一下]"):
             self.assertFalse(utils.has_pause_tags(text), text)
 
+    def test_pause_tags_accept_full_width_brackets_with_a_duration(self):
+        """A Chinese or Japanese IME types `[` and `(` as full-width brackets."""
+        script = "大家好。【停顿：2秒】今天聊聊理财。（停顿1秒）下一段。［ポーズ2秒］最後。"
+
+        self.assertEqual(
+            utils.parse_script_with_pauses(script),
+            [
+                ("speech", "大家好。"),
+                ("pause", 2.0),
+                ("speech", "今天聊聊理财。"),
+                ("pause", 1.0),
+                ("speech", "下一段。"),
+                ("pause", 2.0),
+                ("speech", "最後。"),
+            ],
+        )
+        self.assertNotIn("停顿", utils.remove_pause_tags(script))
+
+        # Chinese prose puts button names and asides in full-width brackets, so a
+        # full-width tag needs a duration; these stay text.
+        for text in ("点击【暂停】按钮", "（静音模式下）", "【暂停一下】"):
+            self.assertFalse(utils.has_pause_tags(text), text)
+
     def test_concat_audio_files_reads_pcm_in_bounded_chunks(self):
         """Long pause-aware narration should not load each WAV into memory."""
         real_wave_open = vs.wave.open

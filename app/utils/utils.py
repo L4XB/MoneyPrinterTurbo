@@ -335,8 +335,12 @@ PAUSE_TAG_KEYWORDS = (
 # 关键词后不能用 `\b`：中日韩文字和数字都属于 `\w`，`[停顿3秒]` 这种不写冒号的
 # 常见写法会因为没有词边界而漏匹配，标签原文被直接朗读。这里只禁止关键词后
 # 紧跟字母（允许数字），`[paused]`、`[暂停一下]` 这类普通文字仍不会被误判。
+# A Chinese or Japanese IME types the tag as 【停顿：2秒】 or （停顿2秒）. Full-width
+# brackets also mark button names and asides in prose (点击【暂停】按钮), so they
+# only open a tag when a duration follows the keyword.
 PAUSE_TAG_PATTERN = re.compile(
-    rf"[\[\(]\s*(?:{PAUSE_TAG_KEYWORDS})(?![^\W\d])(?:\s*[:：]?\s*([^\]\)]*?))?\s*[\]\)]",
+    rf"(?:[\[\(]|[（【［](?=\s*(?:{PAUSE_TAG_KEYWORDS})\s*[:：]?\s*[+-]?\d))"
+    rf"\s*(?:{PAUSE_TAG_KEYWORDS})(?![^\W\d])(?:\s*[:：]?\s*([^\]\)）】］]*?))?\s*[\]\)）】］]",
     re.IGNORECASE,
 )
 
