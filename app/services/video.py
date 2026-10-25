@@ -1907,8 +1907,15 @@ def render_image_zoom_video(
     temp_path = ""
     try:
         # 只有放大模式改变画面尺寸，静止模式保留原始构图及透明背景处理。
+        # Zoom with sub-pixel crops on the fixed canvas: resizing to whole pixels
+        # and centering at whole pixels makes the picture jitter between frames.
         image_clip = (
-            clip.resized(lambda t: 1 + (clip_duration * 0.03) * (t / clip.duration))
+            clip.transform(
+                lambda get_frame, t: video_effects._zoom_frame(
+                    get_frame(t), 1 + (clip_duration * 0.03) * (t / clip.duration)
+                ),
+                apply_to=["mask"],
+            )
             if motion == ImageMotion.zoom
             else clip
         )

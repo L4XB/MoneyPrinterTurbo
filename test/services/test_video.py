@@ -574,7 +574,7 @@ class TestVideoService(unittest.TestCase):
             def with_position(self, _position):
                 return self
 
-            def resized(self, _scale):
+            def transform(self, _effect, apply_to=None):
                 return self
 
         class FakeCompositeClip:
@@ -617,7 +617,7 @@ class TestVideoService(unittest.TestCase):
             def with_position(self, _position):
                 return self
 
-            def resized(self, _scale):
+            def transform(self, _effect, apply_to=None):
                 return self
 
         writes = 0

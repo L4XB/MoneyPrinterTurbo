@@ -124,6 +124,28 @@ def test_native_static_pixels_zoom_default_and_output_identity(tmp_path):
     assert video.render_image_zoom_video(str(source), 3, image_motion="zoom") == default
 
 
+def test_zoom_moves_image_edges_steadily_outward(tmp_path):
+    # A line left of the centre must move outward on every frame of the slow zoom.
+    pixels = np.zeros((240, 160, 3), dtype=np.uint8)
+    pixels[:, 38:42] = 255
+    source = tmp_path / "line.png"
+    Image.fromarray(pixels).save(source)
+    positions = []
+
+    def record_frames(clip, filename, fps, **_kwargs):
+        for index in range(round(clip.duration * fps)):
+            row = clip.get_frame(index / fps)[100:140, :80].astype(float).mean(axis=(0, 2))
+            positions.append(float((np.arange(80) * row).sum() / row.sum()))
+        Path(filename).write_bytes(b"recorded frames")
+
+    with patch.object(video.CompositeVideoClip, "write_videofile", record_frames):
+        video.render_image_zoom_video(str(source), 2, image_motion="zoom")
+
+    steps = np.diff(positions)
+    assert len(steps) == 59
+    assert steps.max() < 0, f"the line moved back toward the centre by {steps.max():.3f} px"
+
+
 def test_static_image_preserves_alpha_composition(tmp_path):
     source = tmp_path / "alpha.png"
     Image.new("RGBA", (64, 64), (240, 0, 0, 128)).save(source)
