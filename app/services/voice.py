@@ -1761,6 +1761,10 @@ def _build_azure_v2_ssml(text: str, voice_name: str, voice_rate: float) -> str:
         normalized_rate = float(voice_rate)
     except (TypeError, ValueError):
         normalized_rate = 1.0
+    # As convert_rate_to_percent() does for Edge: 0, a negative or a non-finite rate is
+    # not a speed, so it plays at normal speed instead of the 0.25x minimum.
+    if not math.isfinite(normalized_rate) or normalized_rate <= 0:
+        normalized_rate = 1.0
     normalized_rate = max(0.25, min(4.0, normalized_rate))
 
     voice_locale_parts = voice_name.split("-", 2)

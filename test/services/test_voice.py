@@ -460,6 +460,14 @@ class TestVoiceService(unittest.TestCase):
         self.assertIn('rate="1.8"', ssml)
         self.assertIn("A &lt; B &amp; \"quoted\"", ssml)
 
+    def test_azure_tts_v2_ssml_plays_an_unset_rate_at_normal_speed(self):
+        # API calls may send voice_rate 0 for "unset"; the Edge path plays 0, negative and
+        # non-finite rates at 1x, and Azure V2 now does the same.
+        for rate in (0, 0.0, None, -1.0, float("nan"), float("inf")):
+            with self.subTest(rate=rate):
+                ssml = vs._build_azure_v2_ssml("Hello.", "en-US-AvaMultilingualNeural", rate)
+                self.assertIn('<prosody rate="1">', ssml)
+
     def test_tts_forwards_rate_to_azure_v2(self):
         """统一 TTS 入口不能在分发 Azure V2 时丢失 voice_rate。"""
         voice_name = "zh-CN-XiaoxiaoMultilingualNeural-V2-Female"
